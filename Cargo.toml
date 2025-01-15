@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "blink",
+    "blink2",
+]
+resolver = "3"
