@@ -1,4 +1,4 @@
-# Teensy arduino test
+# Teensy arduino test in Rust
 
 This repository contains experimental arduino programs for the Teensy
 4.1.

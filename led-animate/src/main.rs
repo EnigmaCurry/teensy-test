@@ -6,10 +6,9 @@ use teensy4_panic as _;
 #[rtic::app(device = teensy4_bsp, peripherals = true, dispatchers = [KPP])]
 mod app {
     use bsp::board;
-    use bsp::hal::{
-        gpio::{Input, Output},
-        iomuxc,
-    };
+    use bsp::hal::gpio::{Input, Output};
+    #[allow(unused_imports)]
+    use bsp::hal::iomuxc;
     use bsp::pins::common::*;
     #[allow(unused_imports)]
     use bsp::pins::t41::*;
@@ -21,9 +20,6 @@ mod app {
 
     use rtic_monotonics::systick::{Systick, *};
 
-    // const INPUT_CONFIG: iomuxc::Config =
-    //     iomuxc::Config::zero().set_pull_keeper(Some(iomuxc::PullKeeper::Pulldown100k));
-
     /// There are no resources shared across tasks.
     #[shared]
     struct Shared {}
@@ -31,10 +27,8 @@ mod app {
     /// These resources are local to individual tasks.
     #[local]
     struct Local {
-        /// The onboard LED on pin 13.
         board_led: board::Led,
         button_led: Output<P24>,
-        /// LED output pins:
         out0: Output<P0>,
         out1: Output<P1>,
         out2: Output<P2>,
@@ -45,10 +39,12 @@ mod app {
         out7: Output<P7>,
         out8: Output<P8>,
         out9: Output<P9>,
-        /// Button input pins:
-        in33: Input<P33>,
-        /// A poller to control USB logging.
+        button: Input<P33>,
         poller: logging::Poller,
+        counter_running: bool,
+        counter_value: u32,
+        last_button_state: bool,
+        debounce_timer: u32,
     }
 
     #[init]
@@ -57,12 +53,10 @@ mod app {
             mut gpio1,
             mut gpio2,
             mut gpio4,
-            mut pins,
+            pins,
             usb,
             ..
         } = my_board(cx.device);
-
-        // iomuxc::configure(&mut pins.p38, INPUT_CONFIG);
 
         let board_led = board::led(&mut gpio2, pins.p13);
         let button_led = gpio1.output(pins.p24);
@@ -76,7 +70,7 @@ mod app {
         let out7 = gpio2.output(pins.p7);
         let out8 = gpio2.output(pins.p8);
         let out9 = gpio2.output(pins.p9);
-        let in33 = gpio4.input(pins.p33);
+        let button = gpio4.input(pins.p33);
         let poller = logging::log::usbd(usb, logging::Interrupts::Enabled).unwrap();
 
         Systick::start(
@@ -86,6 +80,7 @@ mod app {
         );
 
         bin_count::spawn().unwrap();
+
         (
             Shared {},
             Local {
@@ -101,91 +96,136 @@ mod app {
                 out7,
                 out8,
                 out9,
-                in33,
+                button,
                 poller,
+                counter_running: false,
+                counter_value: 0,
+                last_button_state: false,
+                debounce_timer: 0,
             },
         )
     }
 
-    #[task(local = [board_led, button_led, out0, out1, out2, out3, out4, out5, out6, out7, out8, out9, in33])]
+    #[task(local = [board_led, button_led, out0, out1, out2, out3, out4, out5, out6, out7, out8, out9, button, counter_running, counter_value, last_button_state, debounce_timer])]
     async fn bin_count(cx: bin_count::Context) {
-        let mut count = 0u32;
-        cx.local.button_led.clear();
+        const DEBOUNCE_THRESHOLD: u32 = 1; // Approximate debounce time in milliseconds
+        const MAX_COUNT: u32 = 1023; // Maximum value for the 10-bit counter
+
         loop {
-            count = count.wrapping_add(1);
+            let current_button_state = cx.local.button.is_set();
 
-            let leds = [
-                (count >> 0) & 1, // LED 0
-                (count >> 1) & 1, // LED 1
-                (count >> 2) & 1, // LED 2
-                (count >> 3) & 1, // LED 3
-                (count >> 4) & 1, // LED 4
-                (count >> 5) & 1, // LED 5
-                (count >> 6) & 1, // LED 6
-                (count >> 7) & 1, // LED 7
-                (count >> 8) & 1, // LED 8
-                (count >> 9) & 1, // LED 9
-            ];
+            // Debounce logic
+            if current_button_state != *cx.local.last_button_state {
+                *cx.local.debounce_timer += 1;
+                if *cx.local.debounce_timer > DEBOUNCE_THRESHOLD {
+                    *cx.local.last_button_state = current_button_state;
+                    *cx.local.debounce_timer = 0;
 
-            if cx.local.in33.is_set() {
-                cx.local.button_led.set();
+                    // Button press event
+                    if current_button_state {
+                        if *cx.local.counter_running {
+                            if *cx.local.counter_value >= MAX_COUNT {
+                                *cx.local.counter_value = 0; // Reset counter
+                                cx.local.button_led.clear();
+                            } else {
+                                *cx.local.counter_running = false; // Stop counter
+                                *cx.local.counter_value = 0; // Reset counter
+                                cx.local.button_led.clear();
+                            }
+                        } else {
+                            *cx.local.counter_running = true; // Start counter
+                        }
+                    }
+                }
             } else {
+                *cx.local.debounce_timer = 0;
+            }
+
+            // Counter logic
+            if *cx.local.counter_running {
+                let count = *cx.local.counter_value;
+
+                if (count >> 0) & 1 == 1 {
+                    cx.local.out0.set();
+                } else {
+                    cx.local.out0.clear();
+                }
+
+                if (count >> 1) & 1 == 1 {
+                    cx.local.out1.set();
+                } else {
+                    cx.local.out1.clear();
+                }
+
+                if (count >> 2) & 1 == 1 {
+                    cx.local.out2.set();
+                } else {
+                    cx.local.out2.clear();
+                }
+
+                if (count >> 3) & 1 == 1 {
+                    cx.local.out3.set();
+                } else {
+                    cx.local.out3.clear();
+                }
+
+                if (count >> 4) & 1 == 1 {
+                    cx.local.out4.set();
+                } else {
+                    cx.local.out4.clear();
+                }
+
+                if (count >> 5) & 1 == 1 {
+                    cx.local.out5.set();
+                } else {
+                    cx.local.out5.clear();
+                }
+
+                if (count >> 6) & 1 == 1 {
+                    cx.local.out6.set();
+                } else {
+                    cx.local.out6.clear();
+                }
+
+                if (count >> 7) & 1 == 1 {
+                    cx.local.out7.set();
+                } else {
+                    cx.local.out7.clear();
+                }
+
+                if (count >> 8) & 1 == 1 {
+                    cx.local.out8.set();
+                } else {
+                    cx.local.out8.clear();
+                }
+
+                if (count >> 9) & 1 == 1 {
+                    cx.local.out9.set();
+                } else {
+                    cx.local.out9.clear();
+                }
+
                 cx.local.button_led.clear();
-            }
+                *cx.local.counter_value = count.wrapping_add(1);
 
-            if leds[0] == 1 {
-                cx.local.out0.set();
-            } else {
-                cx.local.out0.clear();
-            }
-            if leds[1] == 1 {
-                cx.local.out1.set();
-            } else {
-                cx.local.out1.clear();
-            }
-            if leds[2] == 1 {
-                cx.local.out2.set();
-            } else {
-                cx.local.out2.clear();
-            }
-            if leds[3] == 1 {
-                cx.local.out3.set();
-            } else {
-                cx.local.out3.clear();
-            }
-            if leds[4] == 1 {
-                cx.local.out4.set();
-            } else {
-                cx.local.out4.clear();
-            }
-            if leds[5] == 1 {
-                cx.local.out5.set();
-            } else {
-                cx.local.out5.clear();
-            }
-            if leds[6] == 1 {
-                cx.local.out6.set();
-            } else {
-                cx.local.out6.clear();
-            }
-            if leds[7] == 1 {
-                cx.local.out7.set();
-            } else {
-                cx.local.out7.clear();
-            }
-            if leds[8] == 1 {
-                cx.local.out8.set();
-            } else {
-                cx.local.out8.clear();
-            }
-            if leds[9] == 1 {
-                cx.local.out9.set();
-            } else {
-                cx.local.out9.clear();
+                if *cx.local.counter_value > MAX_COUNT {
+                    *cx.local.counter_running = false;
+                    *cx.local.counter_value = 0; // Reset counter
+                    cx.local.button_led.set();
+                    cx.local.out0.clear();
+                    cx.local.out1.clear();
+                    cx.local.out2.clear();
+                    cx.local.out3.clear();
+                    cx.local.out4.clear();
+                    cx.local.out5.clear();
+                    cx.local.out6.clear();
+                    cx.local.out7.clear();
+                    cx.local.out8.clear();
+                    cx.local.out9.clear();
+                }
             }
 
             Systick::delay(30.millis()).await;
-            count = count.wrapping_add(1);
         }
     }
 
