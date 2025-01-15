@@ -324,6 +324,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "led-animate"
+version = "0.1.0"
+dependencies = [
+ "imxrt-log",
+ "log",
+ "rtic",
+ "rtic-monotonics",
+ "teensy4-bsp",
+ "teensy4-panic",
+]
+
+[[package]]
 name = "log"
 version = "0.4.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
