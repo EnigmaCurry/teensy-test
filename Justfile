@@ -39,3 +39,5 @@ upload package:
     just build {{package}}
     teensy_loader_cli --mcu={{MCU}} target/release/{{package}}.hex
     
+log:
+    picocom /dev/ttyACM0 -b 115200

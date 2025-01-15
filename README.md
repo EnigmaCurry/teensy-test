@@ -17,10 +17,19 @@ The following `just` commands should be run in your terminal in the
 directory containing this repository (it also works from any
 subdirectory).
 
-## Install dependencies
+## Install Rust toolchain dependencies
 
 ```
 just deps
+```
+
+## Install system dependencies
+
+To be able to read logs over USB serial connection, install
+[picocom](https://github.com/npat-efault/picocom):
+
+```
+sudo dnf install picocom
 ```
 
 Install
@@ -82,6 +91,15 @@ To upload, you must set the board into programming mode:
 # Build and install it:
 just upload hello-world
 ```
+
+## Read logs over USB serial connection
+
+```
+just logs
+```
+
+> **Note**: To quit picocom, press `Ctrl-q`. In Emacs vterm you need
+> to press `C-a C-q`.
 
 ## Open documentation in your browser
 
