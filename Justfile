@@ -1,6 +1,7 @@
 set export
 
 current_dir := `pwd`
+MCU := "TEENSY41"
 
 # print help for Just targets
 help:
@@ -26,4 +27,15 @@ udev-rules:
 template *args:
     cargo generate --git https://github.com/mciantyre/teensy4-rs-template --name {{args}}
 
+doc:
+    cargo doc --workspace --open
+    
+build package:
+    mkdir -p target/release
+    cd {{package}} && \
+    cargo objcopy --release -- -O ihex ../target/release/{{package}}.hex
+
+upload package:
+    just build {{package}}
+    teensy_loader_cli --mcu={{MCU}} target/release/{{package}}.hex
     
